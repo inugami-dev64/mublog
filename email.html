@@ -1,0 +1,208 @@
+<hr>
+
+<p>title: A comprehensive guide to setting up your own mail server on OpenBSD<br>
+tags: Tutorial, Email, OpenBSD<br>
+publish-date: 2022-06-24</p>
+
+<h2>edit-date: 2022-06-24</h2>
+
+<p>Traditionally, setting up an email server using dovecot+postfix configuration can be a very painful thing to do.
+Instead of having to deal with postfix, this guide focuses on using OpenSMTPd, which is much easier to setup.
+You will need to some server or vps up and running with OpenBSD and some sort of domain name. Of course you can run
+your webserver from home <sup>24</sup>&frasl;<sub>7</sub>, but if you don&rsquo;t want to do that then you can rent a vps for a small fee. For vps
+renting a vps I can recommend <a href="https://www.vultr.com">Vultr</a> and for domain name, I can recommend
+<a href="https://www.namecheap.com">Namecheap</a>.</p>
+
+<p>PS! You can get 100$ of free credit on Vultr by using my referal <a href="https://www.vultr.com/?ref=8852234">link</a> to sign up.</p>
+
+<h1>Setting up mail subdomain</h1>
+
+<p>Go to your registrar and create a new A/AAAA DNS record for mail subdomain. Now ssh into your webserver and
+create a new nginx configuration for that. This configuration is essentially going to act as a dummy endpoint for
+our mail subdomain which we can use with certbot later.</p>
+
+<pre><code>server {
+    root /var/www/mail;
+    index index.html;
+    server_name mail.karlott.net www.mail.karlott.net;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+
+    listen [::]:80;
+    listen 80;
+}
+</code></pre>
+
+<p>Install certbot and it&rsquo;s nginx plugin with following commands:</p>
+
+<pre><code># pkg_add certbot py3-pip
+# pip3 install certbot-nginx
+</code></pre>
+
+<p>Now we can generate valid TLS certificate:</p>
+
+<pre><code># certbot --nginx
+</code></pre>
+
+<p>This will ask you for your email to use for generating the certificate and domains to generate them for.
+Select the one with mail subdomain and hopefully it should generate TLS certificate without much trouble.
+You can test if certificates are valid by accessing <code>mail.yourdomain.tld</code> from your browser. If you have
+https connection then you are good to proceed to the next step.</p>
+
+<h1>SMTP server configuration</h1>
+
+<p>Install opensmtpd, rspamd and dovecot:<br>
+<code># pkg_add nginx certbot opensmtpd-extras opensmtpd-filter-rspamd dovecot dovecot-pigeonhole rspamd redis</code></p>
+
+<p>There is going to be a default smtpd configuration file under <code>/etc/mail/smtpd.conf</code>. Backup this file somewhere and create
+a new configuration.</p>
+
+<pre><code># SSL certificates
+pki &quot;mail&quot; cert &quot;/etc/letsencrypt/live/mail.yourdomain.tld/fullchain.pem&quot;
+pki &quot;mail&quot; key &quot;/etc/ssl/private/live/mail.yourdomain.tld/privkey.pem&quot;
+
+table credentials passwd:/etc/mail/credentials
+table virtuals file:/etc/mail/virtuals
+
+srs key &quot;&lt;secret&gt;&quot;
+
+# Spam filtering and reverse dns checking
+filter &quot;rdns&quot; phase connect match !rdns disconnect &quot;550 DNS error&quot;
+filter &quot;fcrdns&quot; phase connect match !rdns disconnect &quot;550 DNS error&quot;
+filter &quot;rspamd&quot; proc-exec &quot;/usr/local/libexec/smtpd/filter-rspamd&quot;
+
+# Port 25 is used for incoming emails, for that we apply rdns, fcrdns and rspamd filters
+listen on all port 25 tls pki &quot;mail&quot; filter { &quot;rdns&quot;, &quot;fcrdns&quot;, &quot;rspamd&quot; }
+
+# Ports 465 and 587 specify outgoing emails, filter rspamd is required for dkim signing to make your emails look more legitimate
+listen on all port 465 smtps pki &quot;mail&quot; auth &lt;credentials&gt; filter &quot;rspamd&quot;
+listen on all port 587 tls-require pki &quot;mail&quot; auth &lt;credentials&gt; filter &quot;rspamd&quot;
+
+# Define actions
+action &quot;inbound&quot; maildir &quot;/var/vmail/yourdomain.tld/%!{(MISSING)dest.user:lowercase}&quot; virtual &lt;virtuals&gt;
+action &quot;outbound&quot; relay srs
+
+# Match actions
+match from any for domain &quot;example.org&quot; action &quot;inbound&quot;
+match auth from any for any action &quot;outbound&quot;
+</code></pre>
+
+<p>First of all, this configuration tells smtpd to use correct TLS certificates. Then we specify credentials file to use
+for reading information about email accounts and virtuals file which maps email accounts to correct system users.
+This configuration also tells smtpd to use <a href="https://en.wikipedia.org/wiki/Sender_Rewriting_Scheme">Sender Rewriting Scheme(SRS)</a>,
+which prevents forwarded emails from bypassing Sender Policy Framework and making them look like spam. This key should
+be made hard to guess, in order to prevent third-parties from sending emails through your server. You can generate this
+key randomly by using following command:<br>
+<code># dd if=/dev/urandom bs=1 count=30 | base64</code>
+Just replace <code>&lt;secret&gt;</code> with the result and you are good to go.</p>
+
+<p>Next we define spam filtering mechanisms to use. One practical way of filtering most spam messages is by checking the reverse DNS of
+the sender&rsquo;s IP. If the reverse DNS domain doesn&rsquo;t correspond to the actual domain that was used, then it is most likely a spam email.
+This configuration also uses rspamd, which allows to specify many filtering rules. Right now we only care about DKIM signing and luckally
+rspamd allows that.</p>
+
+<h2>Configuring rspamd for dkim signing</h2>
+
+<p>DKIM (<a href="https://en.wikipedia.org/wiki/DomainKeys_Identified_Mail">DomainKeys Identified Mail</a>) is a comprehensive form of anti-impersonation
+and practically mandatory for being able to send emails from your server to larger email providers such as Google and Microsoft. It adds a
+cryptographic signature to all your emails from your server, which the receiver&rsquo;s spam filter will use to verify email&rsquo;s contents as
+legitimate.</p>
+
+<p>In order to get started generate an RSA keypair using <code>openssl</code>:</p>
+
+<pre><code># mkdir /etc/mail/dkim
+# openssl genrsa -out /etc/mail/dkim/private.key 2048
+# openssl rsa -in /etc/mail/dkim/private.key -pubout -out /etc/mail/dkim/public.key
+# chmod 440 /etc/mail/dkim/private.key
+# chmod 440 /etc/mail/dkim/public.key
+# chown -R root:_rspamd /etc/mail/dkim
+</code></pre>
+
+<p>Note that the private key needs to have read permission by <code>_rspamd</code> group.</p>
+
+<p>Now we can edit <code>/etc/rspamd/local.d/dkim_signing.conf</code> and add following lines:</p>
+
+<pre><code>allow_username_mismatch = true
+
+domain {
+    yourdomain.tld {
+        path = &quot;/etc/rspamd/local.d/private.key&quot;;
+        selector = &quot;mail&quot;;
+    }
+}
+</code></pre>
+
+<h2>Creating virtual mail account and adding custom email accounts</h2>
+
+<p>Now you should create a virtual mail account. This account is responsible for managing all email accounts under your domain.
+You can do this by using following command:<br>
+<code># useradd -c &quot;Virtual Mail Account&quot; -d /var/vmail -s /sbin/nologin -u 2000 -g =uid -L staff vmail &amp;&amp; mkdir /var/vmail &amp;&amp; chown vmail:vmail /var/vmail</code></p>
+
+<p>The home directory is going for this user is going to be <code>/var/vmail</code>, where all emails will be stored later. The userid is
+going to be 2000, so we can use it later for creating email accounts.</p>
+
+<p>Email account credentials are stored in <code>/etc/mail/credentials</code> file. To create email accounts, you will need to first generate
+encrypted smtp password hashes. You can do this by using following commands:</p>
+
+<pre><code># smtpctl encrypt 'password' &gt;&gt; /etc/mail/credentials
+</code></pre>
+
+<p>Edit <code>/etc/mail/credentials</code> to add required data. In the end your file should look something like this:</p>
+
+<pre><code>john@example.org:&lt;password-hash&gt;:vmail:2000:2000:/var/vmail/example.org/john::userdb_mail=maildir:/var/vmail/example.org/john
+</code></pre>
+
+<p>There we map the user john@example.org to system account vmail, with UID and GID of 2000. The password hash is the hash
+we generated earlier.</p>
+
+<p>For security reasons change the ownership of credentials to <code>_smtpd</code> and <code>_dovecot</code> system users and make the file read-only.
+You can achieve this with following commands:</p>
+
+<pre><code># chmod 400 /etc/mail/credentials
+# chown _smtpd:_dovecot /etc/mail/credentials
+</code></pre>
+
+<p>Now you can create virtual user mappings to define valid email addresses. Create / Edit <code>/etc/mail/virtuals</code> file and
+you can add following lines:</p>
+
+<pre><code>admin@example.org: john@example.org
+hostmaster@example.org: john@example.org
+webmaster@example.org: john@example.org
+john@example.org: vmail
+</code></pre>
+
+<p>These first three lines tell OpenSMTPd to alias <code>admin@example.org</code>, <code>hostmaster@example.org</code> and <code>webmaster@example.org</code> emails to <code>john@example.org</code>.
+The last line maps emails from <code>john@example.org</code> to appropriate directory under <code>/var/vmail/example.org/john</code>.</p>
+
+<h2>Generating certificates and creating appropriate dns records</h2>
+
+<p>It is highly recommended to get a tls certificate for your mail server. Fortunately getting a tls certificate is quite
+easy especially when you already have nginx server running. In that case just install appropriate certbot plugin for nginx
+using pip.<br>
+<code>pip3 install certbot-nginx</code></p>
+
+<p>Create a dummy nginx entry for <code>mail</code> subdomain. This should look something like this:</p>
+
+<pre><code>server {
+    index index.html;
+    server_name mail.example.org;
+
+    location / {
+        return 404;
+    }
+
+    listen 80;
+    listen [::]:80;
+}
+</code></pre>
+
+<p>Run <code>certbot --nginx</code> and create a certificate for <code>mail</code> subdomain. Copy generated certificates to <code>/etc/ssl/</code> using following commands:</p>
+
+<pre><code># cp /etc/letsencrypt/live/mail.example.org/cert.pem /etc/ssl/mail.crt
+# cp /etc/letsencrypt/live/mail.example.org/privkey.pem /etc/ssl/private/mail.key
+# chmod 400 /etc/ssl/private/mail.key
+</code></pre>
+
+<p>You should also update your dns records. Create a new MX record with host @ and value <code>mail.example.org</code>. Replace example.org with your domain.</p>
