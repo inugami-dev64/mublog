@@ -12,7 +12,6 @@ import (
 type Config struct {
 	BlogPathMarkdown string
 	BlogPathHTML     string
-	ListPathHTML     string // this is the path where blogs.html list goes
 	TagPathHTML      string
 	IndexPathHTML    string
 
