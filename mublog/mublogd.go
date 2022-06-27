@@ -14,6 +14,8 @@ import (
 // value: article struct
 var blogMarkdownMap map[string]mublog.Article
 
+const configFile string = "./mublog.conf"
+
 func SortArticles() []mublog.Article {
 	var sortedTitleLinks []mublog.Article
 	for _, article := range blogMarkdownMap {
@@ -29,10 +31,10 @@ func main() {
 
 	for {
 		// read configuration file
-		config := mublog.ReadConfiguration(".")
+		config := mublog.ReadConfiguration(configFile)
 
 		// scan for files in markdown_path
-		files, err := ioutil.ReadDir(config.BlogMarkdownPath)
+		files, err := ioutil.ReadDir(config.BlogPathMarkdown)
 		if err != nil {
 			log.Fatal(err)
 		}
@@ -40,7 +42,7 @@ func main() {
 		relist := false
 		for _, file := range files {
 			if value, exists := blogMarkdownMap[file.Name()]; exists {
-				content, _ := ioutil.ReadFile(file.Name())
+				content, _ := ioutil.ReadFile(config.BlogPathMarkdown + "/" + file.Name())
 				md := mublog.ParseMetadata(content)
 
 				// if any of the header content was modified, rewrite blog article
@@ -49,18 +51,22 @@ func main() {
 					value.PublishDate = []rune(mublog.Metadata["publish-date"])
 					value.EditDate = []rune(mublog.Metadata["edit-date"])
 					value.Tags = []rune(mublog.Metadata["tags"])
+
 					rawHTML := mublog.GenerateRawHTML(md)
+					mublog.RegisterTags(config, value)
 					mublog.WriteArticleHTML(config, value, rawHTML)
+					mublog.WriteTagHTMLs(config)
 					relist = true
 				}
 			} else {
-				htmlFileName := config.BlogHTMLPath + "/" + strings.ReplaceAll(file.Name(), ".md", ".html")
-				markdownFileName := config.BlogMarkdownPath + "/" + file.Name()
+				htmlFileName := config.BlogPathHTML + "/" + strings.ReplaceAll(file.Name(), ".md", ".html")
+				markdownFileName := config.BlogPathMarkdown + "/" + file.Name()
 				content, _ := ioutil.ReadFile(markdownFileName)
 				md := mublog.ParseMetadata(content)
 				rawHTML := mublog.GenerateRawHTML(md)
 
 				article := new(mublog.Article)
+				article.URL = []rune(config.BlogURL + "/" + strings.ReplaceAll(file.Name(), ".md", ".html"))
 				article.EditDate = []rune(mublog.Metadata["edit-date"])
 				article.Title = []rune(mublog.Metadata["title"])
 				article.MarkdownPath = []rune(markdownFileName)
@@ -69,7 +75,8 @@ func main() {
 				article.Tags = []rune(mublog.Metadata["tags"])
 				blogMarkdownMap[file.Name()] = *article
 
-				mublog.RegisterTags(string(article.Tags), config.TagHTMLPath, *article)
+				mublog.RegisterTags(config, *article)
+				mublog.WriteTagHTMLs(config)
 				mublog.WriteArticleHTML(config, *article, rawHTML)
 				relist = true
 			}
@@ -77,6 +84,8 @@ func main() {
 
 		if relist {
 			articles := SortArticles()
+			mublog.WriteBlogListHTML(config, articles)
+			mublog.WriteIndexHTML(config, articles)
 			mublog.WriteToRSS(config, articles)
 		}
 

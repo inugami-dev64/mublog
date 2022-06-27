@@ -11,15 +11,15 @@ var rssState bool = false
 func initialiseRSS(config Config, file *os.File) {
 	rssInit := "<rss version=2.0>\n" +
 		"<channel>\n" +
-		"<title>" + config.RSSTitle + "</title>\n" +
-		"<language>" + config.Language + "</language>\n" +
-		"<atom:link href=\"" + config.RSSUrl + "\" rel=\"self\" type=\"application/rss+xml/\"/>\n"
+		"<title>" + config.RssTitle + "</title>\n" +
+		"<language>" + config.RssLanguage + "</language>\n" +
+		"<atom:link href=\"" + config.RssURL + "\" rel=\"self\" type=\"application/rss+xml/\"/>\n"
 
 	file.WriteString(rssInit)
 }
 
 func WriteToRSS(config Config, sortedArticles ArticleList) {
-	file, err := os.Create(config.RSSFile)
+	file, err := os.OpenFile(config.RssFile, os.O_CREATE|os.O_RDWR, 0666)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)

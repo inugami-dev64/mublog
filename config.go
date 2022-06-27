@@ -10,23 +10,31 @@ import (
 // main configuration for mublog
 // by default this file is located in /etc/mublog/mublog.conf
 type Config struct {
-	BlogMarkdownPath   string
-	BlogHTMLPath       string
-	TagHTMLPath        string
-	IndexHTMLPath      string
+	BlogPathMarkdown string
+	BlogPathHTML     string
+	ListPathHTML     string // this is the path where blogs.html list goes
+	TagPathHTML      string
+	IndexPathHTML    string
+
 	IndexTemplateHTML  string
 	BlogTemplateHTML   string
 	ListTemplateHTML   string
 	MaxIndexedArticles int
-	RSSFile            string
-	RSSTitle           string
-	RSSDescription     string
-	RSSUrl             string
-	Language           string
+
+	IndexURL string
+	BlogURL  string
+	TagsURL  string
+	RssURL   string
+
+	RssFile        string
+	RssTitle       string
+	RssDescription string
+	RssLanguage    string
 }
 
 type Article struct {
 	HTMLPath     []rune
+	URL          []rune
 	MarkdownPath []rune
 	Tags         []rune
 	Title        []rune
@@ -34,6 +42,7 @@ type Article struct {
 	EditDate     []rune
 }
 
+// Article sorting interface
 type ArticleList []Article
 
 func (a ArticleList) Less(i, j int) bool {
@@ -48,14 +57,37 @@ func (a ArticleList) Swap(i, j int) {
 	a[i], a[j] = a[j], a[i]
 }
 
-func ReadConfiguration(confPath string) Config {
-	_, err := os.Stat(confPath + "/mublog.conf")
+// String sorting interface
+type sortStrings []string
+
+func (s sortStrings) Less(i, j int) bool {
+	return s[i] < s[j]
+}
+
+func (s sortStrings) Len() int {
+	return len(s)
+}
+
+func (s sortStrings) Swap(i, j int) {
+	s[i], s[j] = s[j], s[i]
+}
+
+func Min(x, y int) int {
+	if x < y {
+		return x
+	} else {
+		return y
+	}
+}
+
+func ReadConfiguration(configFile string) Config {
+	_, err := os.Stat(configFile)
 	if err != err {
-		log.Fatal("No configuration file found in: ", confPath+"/mublog.conf")
+		log.Fatal("No configuration file found in: ", configFile)
 	}
 
 	var config Config
-	if _, err := toml.DecodeFile(confPath+"/mublog.conf", &config); err != nil {
+	if _, err := toml.DecodeFile(configFile, &config); err != nil {
 		log.Fatal(err)
 	}
 
