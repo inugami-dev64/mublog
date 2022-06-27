@@ -1,0 +1,174 @@
+<html>
+    <head>
+        <title>Compiling and flashing coreboot for T420 (corebooting part 2)</title>
+    </head>
+    <body>
+        <h1>Compiling and flashing coreboot for T420 (corebooting part 2)</h1>
+<b class="date">Publish date: </b><br>
+<b class="date">Last edited: </b><br>
+<h1>Compiling and flashing coreboot for T420</h1>
+
+<p>Recently I cleaned and hacked into the locked bios of a T420 that my friend had given to me for Corebooting. Article can
+be found <a href="https://sadblog.xyz/blog/coreboot1.html">here</a>. After having successfully unlocked the bios, it was time to
+proceed with Corebooting. The main steps can be broken down into following categories: updating the vendor bios,
+getting the original bios image from the flash chip, compiling the rom and flashing the rom. You will either need a Raspberry
+PI setup for writing the flashchip or one of the SPI programmers that are sold on eBay for like 10$. I used a CH341A
+programmer, which came with a nice SOIC-8 clip as well.</p>
+
+<h2>Updating the vendor bios</h2>
+
+<p>First step of performing any Corebooting is to update the vendor BIOS to the latest version possible. This ensures that the
+most up to date firmware is used, since after corebooting it becomes nearly impossible to update the firmware. For Thinkpad
+T420 you can find the latest BIOS update image from following <a href="https://pcsupport.lenovo.com/us/en/products/laptops-and-netbooks/thinkpad-t-series-laptops/thinkpad-t420/downloads/DS018784">site</a>.
+After downloading and verifying the integrity you can proceed to flashing the BIOS update image to the USB drive. First of
+all you will need to extract an El Torito image from the received ISO file. For that install <code>genisoimage</code>.
+After installation extract the image with following command:</p>
+
+<pre><code>$ geteltorito 83uj33us.iso -o t420.img
+</code></pre>
+
+<p>Now you can flash the image to USB drive using following command:</p>
+
+<pre><code>$ sudo dd if=t420.img of=/dev/sdX bs=64K status=progress
+</code></pre>
+
+<p>Reboot the computer and you should be able to boot into the BIOS update utility. Just follow on-screen instructions and you
+should be good to go. Additionally check the BIOS version to verify that the update really was successful.</p>
+
+<h2>Extracting BLOBs from vendor BIOS</h2>
+
+<p>After successfully updating the bios, you should extract all necessary BLOBs, which are needed for the compilation. If you
+are lucky, you should be able to dump the bios image internally. To test if internal flashing is supported run the following
+command and cross your fingers:</p>
+
+<pre><code>$ sudo /sbin/flashrom -p internal -r bios.bin
+</code></pre>
+
+<p>If no errors are displayed, you can proceed to the next stage. If there were errors then that means that internal flashing is
+unsupported and thus external measures need to be taken -__-. Unfortunately in my case I could not read rom internally.</p>
+
+<h3>Reading the BIOS image externally</h3>
+
+<p><strong>NOTE: I recommend to remove the CPU and memory from the motherboard to avoid accidental powering, when the programmer is connected.</strong></p>
+
+<p>Disassemble your laptop and locate the flash chip. The flash chip should be located directly under the magnesium cover
+around the trackpad area. Once you have located the flash chip, you can connect it to the SPI programmer. Firstly
+I attempted to connect the flash chip with SOIC-8 clip but soon I realised that doing so was merely impossible to create a
+stable connection. After some frustration I decided to solder jumper wires to the motherboard instead (savage, I know).
+After doing so I was prompted with something like this:</p>
+
+<p><img src="/res/coreboot/SPI.png" alt="Looks legit" /></p>
+
+<p>I tested the conductivity between chip pins and potential spots on motherboard to find out that there were special reserved
+holes on the PCB connected to the flash chip (potentially for flashing purposes?) where I could conveniently solder jumper wires
+to. After doing so I connected the jumpers with my programmer.</p>
+
+<p><strong>PLEASE ALWAYS DOUBLE, TRIPLE, QUADRUPLE CHECK THAT ALL WIRES ARE CONNECTED TO THE PROGRAMMER CORRECTLY!!! THIS CAN POTENTIALLY
+SAVE YOUR MOTHERBOARD!!!</strong></p>
+
+<p>After verifying that everything was correct, I connected the programmer with my laptop. I checked if the usb device is
+recognized properly and then proceeded to reading the BIOS image with following command:</p>
+
+<pre><code>$ sudo /sbin/flashrom -p ch341a_spi -r bios.bin.1
+</code></pre>
+
+<p>If no errors are thrown, you should repeat the reading process at least 2 times to check for potential checksum errors.
+Then check the SHA256 checksums with following command:</p>
+
+<pre><code>$ sha256sum bios.bin.1 bios.bin.2 bios.bin.3
+</code></pre>
+
+<p>If the hashes match you are good to go, if not then check your connections and try again. Delete the other two images
+and proceed with the next stage.</p>
+
+<h2>Extracting firmware BLOBs from the BIOS image</h2>
+
+<p>For now you should have managed to successfully extract the vendor bios image from the flash chip. Clone the coreboot
+repository using following commands:</p>
+
+<pre><code>$ git clone https://review.coreboot.org/coreboot
+$ cd coreboot
+$ git submodule update --init --checkout
+</code></pre>
+
+<p>Navigate to <code>./util/ifdtool</code> and run <code>make</code> to compile it. Copy or create a symlink of the executable to <code>/usr/local/bin</code>
+for convenience and navigate to directory where BIOS image is stored. Extract the bios image into firmware blobs by using
+following command:</p>
+
+<pre><code>$ ifdtool -x bios.bin
+</code></pre>
+
+<p>From now on, you should be having 4 regions of the bios extracted. The files should be following:
+<code>flashregion_0_flashdescriptor.bin</code>, <code>flashregion_1_bios.bin</code>, <code>flashregion_2_intel_me.bin</code> and <code>flashregion_3_gbe.bin</code>.
+Delete <code>flashregion_1_bios.bin</code> since it is not needed and rename the rest of the files to something more memorable, for example:</p>
+
+<pre><code>$ mv flashregion_0_flashdescriptor.bin descriptor.bin
+$ mv flashregion_2_intel_me.bin me.bin
+$ mv flashregion_3_gbe.bin gbe.bin
+</code></pre>
+
+<h3>Extracting the vbios</h3>
+
+<p>If you would like to use a custom bootsplash or use Tianocore as a payload, you will need to extract the vbios from original vendor
+bios image. For that step I recommend using <a href="https://github.com/LongSoft/UEFITool">UEFITool</a>, which is essentially a GUI tool for
+viewing and extracting multiple regions of your UEFI firmware images. Install and open your bios image with it. Search for the string
+&ldquo;VGA Compatible BIOS&rdquo; and uncheck <code>Unicode</code>. If the search was successful, you should find an appropriate RAW area. Click
+&ldquo;Action -&gt; Section -&gt; Extract Body&hellip;&rdquo; to extract it from the BIOS image and give it a familiar name to later find it.</p>
+
+<h3>Crippling Intel ME spyware</h3>
+
+<p><img src="/res/coreboot/Glow.png" alt="Average CIA agent, looking into your loli collection on your Stinkpad running btw I use Arch Linux via Intel ME backdoor" /></p>
+
+<p>Unfortunately it is impossible to disable Intel ME completely, however it is possible to greatly restrict its capabilities using
+<a href="https://github.com/corna/me_cleaner">me_cleaner scripts</a>. Coreboot also gives you an option to reduce ME firmware size on compilation,
+however for flexibility I usually like to clean Intel ME manually using the me_cleaner. Once you have these scripts, you can sanitize
+most of the ME functionality using following command:</p>
+
+<pre><code>python3 me_cleaner.py -S me.bin -O me_clean.bin
+</code></pre>
+
+<p>Once you have successfully done that you can proceed to compilation stage.</p>
+
+<h2>Compiling and flashing Coreboot rom</h2>
+
+<p>Install following packages needed for compilation (Debian):</p>
+
+<pre><code>apt install build-essential gnat flex bison libncurse5-dev wget zlib1g-dev iasl
+</code></pre>
+
+<p>Once you have installed those prerequisites navigate to Coreboot root directory and run <code>make nconfig</code>. From here on you can customise the Coreboot
+to fill your needs. Make sure that the board is <code>Lenovo T420</code>, <code>Use CMOS for configuration values</code> is used and CBFS filesystem size should be set to 3MB
+(0x300000). Navigate to <code>Chipset</code> and verify that <code>Add Intel descriptor.bin file</code>, <code>Add Intel ME/TXE firmware</code> and <code>Add gigabit ethernet configuration</code> paths
+are set correctly to your extracted firmware blobs. For payload I used default <code>SeaBIOS</code>. Additionally if you want to use a custom bootsplash, add the correct
+vbios rom path to <code>Devices -&gt; Add a VGA BIOS image</code>. Bootsplash image path can be specified in <code>General setup -&gt; Add a bootsplash image</code>. Supported formats
+are bmp and jpg. If you want to use my bootsplash then link can be found <a href="/res/coreboot/Bootsplash.jpg">here</a>. Once you are done configuring your Coreboot build
+you can start by compiling the required toolchain with following command:</p>
+
+<pre><code>$ make crossgcc CPUS=&lt;n&gt;
+</code></pre>
+
+<p>This compilation takes a looong time (on my T420 it took about 2 - 3 hours), so grab yourself a cup of coffee and something to eat while it is compiling. After
+the toolchain is built you can compile the Coreboot rom using following command:</p>
+
+<pre><code>$ make -j&lt;n&gt;
+</code></pre>
+
+<p>This shouldn&rsquo;t take long and once it is complete, you should find <code>coreboot.rom</code> file in <code>build/</code> directory. Now you can start flashing your freshly built
+Coreboot rom using following command:</p>
+
+<pre><code>$ sudo /sbin/flashrom -p ch341a_spi -w coreboot.rom
+</code></pre>
+
+<p>If no errors were present, you can reassemble the laptop and power it on. The result will be magnificent!</p>
+
+<p><img src="/res/coreboot/WorkingBootsplash.png" alt="" /></p>
+
+<h1>More information about Corebooting</h1>
+
+<ul>
+<li><a href="https://www.coreboot.org/Board:lenovo/t420">Thinkpad T420 coreboot article</a></li>
+<li><a href="https://www.coreboot.org/Build_HOWTO">Coreboot build howto</a></li>
+</ul>
+
+    </body>
+</html>
