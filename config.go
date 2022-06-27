@@ -18,15 +18,34 @@ type Config struct {
 	BlogTemplateHTML   string
 	ListTemplateHTML   string
 	MaxIndexedArticles int
-	RSSPath            string
+	RSSFile            string
+	RSSTitle           string
+	RSSDescription     string
+	RSSUrl             string
+	Language           string
 }
 
 type Article struct {
-	HTMLPath    []rune
-	Tags        []rune
-	Title       []rune
-	PublishDate []rune
-	EditDate    []rune
+	HTMLPath     []rune
+	MarkdownPath []rune
+	Tags         []rune
+	Title        []rune
+	PublishDate  []rune
+	EditDate     []rune
+}
+
+type ArticleList []Article
+
+func (a ArticleList) Less(i, j int) bool {
+	return string(a[i].EditDate) > string(a[j].EditDate)
+}
+
+func (a ArticleList) Len() int {
+	return len(a)
+}
+
+func (a ArticleList) Swap(i, j int) {
+	a[i], a[j] = a[j], a[i]
 }
 
 func ReadConfiguration(confPath string) Config {
