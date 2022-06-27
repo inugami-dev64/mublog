@@ -14,7 +14,7 @@ import (
 // value: article struct
 var blogMarkdownMap map[string]mublog.Article
 
-const configFile string = "./mublog.conf"
+const configFile string = "/etc/mublog/mublog.conf"
 
 func SortArticles() []mublog.Article {
 	var sortedTitleLinks []mublog.Article
