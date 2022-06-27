@@ -9,7 +9,7 @@ var rssState bool = false
 
 // Write initial rss
 func initialiseRSS(config Config, file *os.File) {
-	rssInit := "<rss version=2.0>\n" +
+	rssInit := "<rss version=\"2.0\">\n" +
 		"<channel>\n" +
 		"<title>" + config.RssTitle + "</title>\n" +
 		"<language>" + config.RssLanguage + "</language>\n" +
