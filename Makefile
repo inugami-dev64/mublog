@@ -11,8 +11,8 @@ mublogd: $(SOURCES)
 .PHONY: install clean
 install: mublogd
 	cp -r mublogd /usr/local/bin
-	mkdir /etc/mublogd
-	touch /etc/mublogd
+	mkdir /etc/mublog
+	touch /etc/mublog/mublog.conf
 
 clean:
 	rm mublogd
