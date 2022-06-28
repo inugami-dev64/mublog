@@ -66,6 +66,8 @@ func main() {
 		mublog.WriteBlogListHTML(config, articles)
 		mublog.WriteIndexHTML(config, articles)
 		mublog.WriteToRSS(config, articles)
-		time.Sleep(10 * time.Second)
+
+		// wait for 60 seconds before regenerating pages
+		time.Sleep(60 * time.Second)
 	}
 }
