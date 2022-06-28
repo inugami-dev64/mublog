@@ -13,7 +13,11 @@ type Tag struct {
 	articles []Article
 }
 
-var tagArticles map[string]Tag = make(map[string]Tag)
+var tagArticles map[string]Tag
+
+func InitTags() {
+	tagArticles = make(map[string]Tag)
+}
 
 // Register article to belonging into certain tags
 func RegisterTags(config Config, article Article) {
@@ -82,13 +86,14 @@ func WriteTagHTMLs(config Config) {
 		html = strings.ReplaceAll(html, "{content}", strings.Join(content, ""))
 
 		fname := config.TagPathHTML + "/" + strings.ToLower(key) + ".html"
-		file, err := os.OpenFile(fname, os.O_CREATE|os.O_RDWR, 0666)
+		file, err := os.OpenFile(fname, os.O_CREATE|os.O_RDWR|os.O_TRUNC, 0666)
 		if err != nil {
 			log.Fatal(err)
 			os.Exit(1)
 		}
 
-		file.WriteString(html)
+		file.Write([]byte(html))
+		file.Sync()
 		file.Close()
 	}
 }

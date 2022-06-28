@@ -6,7 +6,7 @@ create a list page for all articles sorted by publishing date and use tags for c
 
 ## Getting started
 
-First compile and install mublog.
+First compile and install mublogd.
 ```
 # make install
 ```
@@ -55,7 +55,7 @@ which are used by generator to replace them with appropriate HTML code.
 Note that the `{content}` identifier can mean different thing for `BlogTemplateHTML` and `ListTemplateHTML`. For blog templates `{content}`
 represents the location where generated blog contents should be, but for list templates this means the location where list elements will be put.
 
-Once configuration steps are completed and templates are written, generate data using:
+Once configuration steps are completed and templates are written run the daemon using:
 ```
-# mugenblog
+# mublogd
 ```

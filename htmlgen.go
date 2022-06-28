@@ -32,9 +32,24 @@ func WriteArticleHTML(config Config, article Article, rawHTML string) {
 		os.Exit(1)
 	}
 
+	// Extract tags
+	tags := strings.Split(string(article.Tags), ", ")
+
 	strContent := string(content)
 	strContent = strings.ReplaceAll(strContent, "{title}", string(article.Title))
 	strContent = strings.ReplaceAll(strContent, "{edit-date}", string(article.EditDate))
+
+	var tagHTML []string
+	for i := range tags {
+		entry := "<a href=\"" +
+			config.TagsURL + "/" +
+			strings.ToLower(tags[i]) +
+			".html\">" +
+			tags[i] + "</a>\n"
+		tagHTML = append(tagHTML, entry)
+	}
+
+	strContent = strings.ReplaceAll(strContent, "{tags}", strings.Join(tagHTML, ""))
 	strContent = strings.ReplaceAll(strContent, "{publish-date}", string(article.PublishDate))
 	strContent = strings.ReplaceAll(strContent, "{content}", rawHTML)
 
@@ -69,12 +84,13 @@ func WriteBlogListHTML(config Config, articles []Article) {
 	strContent := strings.ReplaceAll(string(content), "{content}", strings.Join(list, ""))
 	strContent = strings.ReplaceAll(strContent, "{title}", "List of all blog articles")
 
-	file, err := os.Create(config.IndexPathHTML + "/bloglist.html")
+	file, err := os.OpenFile(config.IndexPathHTML+"/bloglist.html", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0666)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
 	file.Write([]byte(strContent))
+	file.Sync()
 	file.Close()
 }
 
@@ -112,11 +128,12 @@ func WriteIndexHTML(config Config, sortedArticles []Article) {
 		strContent = strings.ReplaceAll(strContent, "{see-more}", "")
 	}
 
-	file, err := os.Create(config.IndexPathHTML + "/index.html")
+	file, err := os.OpenFile(config.IndexPathHTML+"/index.html", os.O_CREATE|os.O_TRUNC|os.O_RDWR, 0666)
 	if err != nil {
 		log.Fatal(err)
 		os.Exit(1)
 	}
 	file.Write([]byte(strContent))
+	file.Sync()
 	file.Close()
 }

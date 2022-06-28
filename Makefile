@@ -1,18 +1,20 @@
-SOURCES=mublog/mublog.go\
+SOURCES=main/main.go\
 		config.go\
 		htmlgen.go\
 		metadata.go\
 		rss.go\
 		tags.go
 
-mublog: $(SOURCES)
-	go build -o mugenblog ./mublog/mublog.go
+mublogd: $(SOURCES)
+	go build -o mublogd main/main.go
 
-.PHONY: install clean
-install: mugenblog
-	cp -r mugenblog /usr/local/bin
-	mkdir /etc/mublog
-	touch /etc/mublog/mublog.conf
+.PHONY: uninstall install clean
+
+uninstall: 
+	rm /usr/local/bin/mublogd
+
+install: mublogd
+	cp -r mublogd /usr/local/bin
 
 clean:
 	rm mugenblog
